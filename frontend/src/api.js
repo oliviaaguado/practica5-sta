@@ -1,25 +1,20 @@
-const API_URL = "http://127.0.0.1:5001/p5-sta/us-central1/api"; 
-// Sustituye <TU_PROJECT_ID> por el ID real de Firebase
+// frontend/src/api.js
+// Cliente para la función serverless saveMessage (Parte 1)
 
-export async function createPost({ title, body }) {
-  const res = await fetch(`${API_URL}/createPost`, {
+const FUNCTION_URL = "http://127.0.0.1:5001/p5-sta/us-central1/saveMessage";
+// Cambia TU_PROJECT_ID por el projectId que te muestra el emulador
+
+export async function sendMessage(text) {
+  const res = await fetch(FUNCTION_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, body })
+    body: JSON.stringify({ text }),
   });
-  return res.json();
-}
 
-export async function getPosts() {
-  const res = await fetch(`${API_URL}/posts`);
-  return res.json();
-}
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Error ${res.status}: ${errorText}`);
+  }
 
-export async function votePost(postId, delta) {
-  const res = await fetch(`${API_URL}/posts/${postId}/vote`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ delta })
-  });
   return res.json();
 }

@@ -1,119 +1,60 @@
 // functions/index.js
 const functions = require("firebase-functions");
-const admin = require("firebase-admin");
-const { FieldValue } = require("firebase-admin/firestore"); 
-const express = require("express");
-const cors = require("cors");
 
-admin.initializeApp();
-const db = admin.firestore();
+// Almacenamiento en memoria solo para la demo
+let messages = {};
 
-const app = express();
-app.use(cors({ origin: true }));
-app.use(express.json());
+/**
+ * Función HTTP serverless que:
+ * - Recibe { text } por POST
+ * - Genera una clave con fecha/hora
+ * - Devuelve todas las entradas guardadas hasta el momento
+ *
+ * Ejemplo de respuesta:
+ * {
+ *   "ok": true,
+ *   "saved": { "2025-11-25_21:15:30": "Hola" },
+ *   "allMessages": {
+ *     "2025-11-25_21:15:30": "Hola"
+ *   }
+ * }
+ */
+exports.saveMessage = functions.https.onRequest((req, res) => {
+  // CORS para poder llamar desde el frontend en localhost
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type");
 
-// Crear post
-app.post("/createPost", async (req, res) => {
-  try {
-    const { title = "", body = "" } = req.body;
-    const newDoc = db.collection("posts").doc();
-    const data = {
-      title,
-      body,
-      createdAt: FieldValue.serverTimestamp(),
-      votes: 0,
-      commentsCount: 0
-    };
-    await newDoc.set(data);
-    const snap = await newDoc.get();
-    res.status(201).json({ id: snap.id, ...snap.data() });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+  // Preflight de CORS
+  if (req.method === "OPTIONS") {
+    return res.status(204).send("");
   }
-});
 
-// Listar posts con sort=new|votes
-app.get("/posts", async (req, res) => {
-  try {
-    const sort = req.query.sort || "new";
-    let q;
-    if (sort === "votes") q = db.collection("posts").orderBy("votes", "desc");
-    else q = db.collection("posts").orderBy("createdAt", "desc");
-    const snap = await q.get();
-    const posts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    res.json(posts);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+  // Solo aceptamos POST
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Método no permitido" });
   }
-});
 
-// Votar post { delta: 1 | -1 }
-app.post("/posts/:postId/vote", async (req, res) => {
-  try {
-    const { delta } = req.body;
-    const { postId } = req.params;
-    const postRef = db.collection("posts").doc(postId);
-    await postRef.update({ votes: FieldValue.increment(delta || 1) });
-    const snap = await postRef.get();
-    res.json({ id: snap.id, ...snap.data() });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+  const { text } = req.body;
+  if (!text) {
+    return res.status(400).json({ error: "Falta el campo 'text'" });
   }
-});
 
-// Añadir comentario
-app.post("/posts/:postId/comments", async (req, res) => {
-  try {
-    const { postId } = req.params;
-    const { body = "" } = req.body;
-    const postRef = db.collection("posts").doc(postId);
-    const commentRef = postRef.collection("comments").doc();
-    const commentData = {
-      body,
-      createdAt: FieldValue.serverTimestamp(),
-      votes: 0
-    };
-    await commentRef.set(commentData);
-    await postRef.update({ commentsCount: FieldValue.increment(1) });
-    const snap = await commentRef.get();
-    res.status(201).json({ id: snap.id, ...snap.data() });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
+  const now = new Date();
+  const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}-${String(now.getDate()).padStart(2, "0")}_${String(
+    now.getHours()
+  ).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(
+    now.getSeconds()
+  ).padStart(2, "0")}`;
 
-// Listar comentarios de un post
-app.get("/posts/:postId/comments", async (req, res) => {
-  try {
-    const { postId } = req.params;
-    const coll = db.collection("posts").doc(postId).collection("comments").orderBy("createdAt", "desc");
-    const snap = await coll.get();
-    const comments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    res.json(comments);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
+  messages[key] = text;
 
-// Votar comentario
-app.post("/posts/:postId/comments/:commentId/vote", async (req, res) => {
-  try {
-    const { postId, commentId } = req.params;
-    const { delta } = req.body;
-    const commentRef = db.collection("posts").doc(postId).collection("comments").doc(commentId);
-    await commentRef.update({ votes: FieldValue.increment(delta || 1) });
-    const snap = await commentRef.get();
-    res.json({ id: snap.id, ...snap.data() });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
+  return res.json({
+    ok: true,
+    saved: { [key]: text },
+    allMessages: messages,
+  });
 });
-
-// Exportar la app como función HTTPS
-exports.api = functions.https.onRequest(app);
